@@ -1,0 +1,79 @@
+[
+  {
+    "id": "STU-0001",
+    "name": "Valeria Torres",
+    "subject": "Matemáticas",
+    "grade": 3,
+    "classroom": 101
+  },
+  {
+    "id": "STU-0002",
+    "name": "Diego Hernández",
+    "subject": "Matemáticas",
+    "grade": 3,
+    "classroom": 101
+  },
+  {
+    "id": "STU-0003",
+    "name": "Camila Ramírez",
+    "subject": "Historia",
+    "grade": 5,
+    "classroom": 204
+  },
+  {
+    "id": "STU-0004",
+    "name": "Mateo Sánchez",
+    "subject": "Ciencias",
+    "grade": 4,
+    "classroom": 110
+  },
+  {
+    "id": "STU-0005",
+    "name": "Lucía Morales",
+    "subject": "Inglés",
+    "grade": 6,
+    "classroom": 305
+  },
+  {
+    "id": "STU-0006",
+    "name": "Santiago Castro",
+    "subject": "Historia",
+    "grade": 5,
+    "classroom": 204
+  },
+  {
+    "id": "STU-0007",
+    "name": "Regina Flores",
+    "subject": "Ciencias",
+    "grade": 4,
+    "classroom": 110
+  },
+  {
+    "id": "STU-0008",
+    "name": "Emiliano Vargas",
+    "subject": "Matemáticas",
+    "grade": 2,
+    "classroom": 101
+  },
+  {
+    "id": "STU-0009",
+    "name": "Ximena Ortiz",
+    "subject": "Inglés",
+    "grade": 6,
+    "classroom": 305
+  },
+  {
+    "id": "STU-0010",
+    "name": "Sebastián Reyes",
+    "subject": "Arte",
+    "grade": 1,
+    "classroom": 112
+  },
+  {
+    "id": "STU-0011",
+    "name": "JULIO CESAR GARCIA MOLINA",
+    "subject": "Matemáticas",
+    "grade": 3,
+    "classroom": 101
+  }
+]

@@ -1,0 +1,20 @@
+# Secretos: se escriben solo en la máquina o en Render
+.env
+.env.*
+!.env.example
+
+# Entornos locales
+.venv/
+venv/
+
+# Cachés
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Cobertura
+.coverage
+.coverage.*
+htmlcov/

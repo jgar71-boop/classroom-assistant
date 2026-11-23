@@ -1,0 +1,26 @@
+# Secretos: nunca entran en la imagen
+.env
+.env.*
+
+# Pruebas y herramientas que no corren en producción
+tests
+e2e
+scripts
+.github
+render.yaml
+
+# Control de versiones y entornos locales
+.git
+.gitignore
+.venv
+venv
+
+# Cachés y reportes
+__pycache__
+**/__pycache__
+*.pyc
+.pytest_cache
+.coverage
+htmlcov
+.mypy_cache
+.ruff_cache

@@ -1,0 +1,97 @@
+# Pipeline de CI del Classroom Assistant.
+# Cuatro etapas encadenadas con needs: style -> unit -> e2e -> docker.
+# Render publica solo si todas pasan (autoDeployTrigger: checksPass en render.yaml).
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  style:
+    name: style (pylint, 88 columnas)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+      - name: Pylint
+        run: >-
+          python -m pylint app tests scripts
+          --max-line-length=88
+          --fail-under=10
+          --disable=missing-function-docstring,redefined-outer-name,too-few-public-methods
+
+  unit:
+    name: unit (pruebas y BDD, cobertura >= 80 %)
+    needs: style
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+      - name: Pruebas con cobertura
+        run: python -m pytest tests -q --cov=app --cov-fail-under=80
+
+  e2e:
+    name: e2e (Playwright con el modelo simulado)
+    needs: unit
+    runs-on: ubuntu-latest
+    env:
+      # Clave de ejemplo solo para esta corrida: no es un secreto ni sirve en Render
+      E2E_API_KEY: ci-example-key-0123456789
+      API_KEYS: ci:ci-example-key-0123456789
+      MODEL_PROVIDER: fake
+      RATE_LIMIT_PER_MINUTE: "1000"
+      BASE_URL: http://127.0.0.1:8000
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+      - name: Instalar Chromium para Playwright
+        run: python -m playwright install --with-deps chromium
+      - name: Arrancar el producto
+        run: |
+          # Copia de los alumnos, para no tocar data/ del repositorio
+          cp data/students.json "$RUNNER_TEMP/students.json"
+          STUDENTS_PATH="$RUNNER_TEMP/students.json" nohup python -m uvicorn \
+            app.main:app --host 127.0.0.1 --port 8000 --no-access-log \
+            > "$RUNNER_TEMP/server.log" 2>&1 &
+          for _ in $(seq 1 40); do
+            if curl -fsS "$BASE_URL/health" > /dev/null; then
+              exit 0
+            fi
+            sleep 0.5
+          done
+          echo "El producto no arrancó"
+          cat "$RUNNER_TEMP/server.log"
+          exit 1
+      - name: Pruebas de Playwright
+        run: python -m pytest e2e -q --base-url "$BASE_URL"
+      - name: Log del producto si algo falla
+        if: failure()
+        run: cat "$RUNNER_TEMP/server.log" || true
+
+  docker:
+    name: docker (construir la imagen)
+    needs: e2e
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Construir la imagen
+        run: docker build -t classroom-assistant:ci .

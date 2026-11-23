@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Classroom Assistant</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; background: #f4f5f7;
+      color: #1f2933; }
+    header { background: #2b4c7e; color: #fff; padding: 1rem 1.5rem; }
+    main { display: grid; gap: 1rem; padding: 1rem 1.5rem;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+    section { background: #fff; border-radius: 8px; padding: 1rem;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); }
+    label { display: block; margin-top: 0.5rem; font-size: 0.9rem; }
+    input { width: 100%; box-sizing: border-box; padding: 0.4rem; }
+    button { margin-top: 0.75rem; padding: 0.5rem 1rem; background: #2b4c7e;
+      color: #fff; border: 0; border-radius: 4px; cursor: pointer; }
+    table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; }
+    th, td { text-align: left; padding: 0.3rem; border-bottom: 1px solid #e4e7eb; }
+    .error { color: #b00020; min-height: 1.2rem; }
+    .message { margin: 0.5rem 0; padding: 0.5rem; border-radius: 6px; }
+    .user { background: #e3ecf8; }
+    .assistant { background: #eef7ee; }
+    .tools { font-size: 0.8rem; color: #52606d; }
+    .request-id { font-size: 0.75rem; color: #7b8794; font-family: monospace; }
+  </style>
+</head>
+<body>
+  <header><h1>Classroom Assistant</h1></header>
+  <main>
+    <section>
+      <h2>Acceso</h2>
+      <!-- La clave vive solo en esta pestaña (sessionStorage), nunca en la página. -->
+      <label>Clave de acceso
+        <input data-testid="api-key" id="api-key" type="password"
+          autocomplete="off">
+      </label>
+      <p class="error" data-testid="key-error" id="key-error"></p>
+    </section>
+    <section>
+      <h2>Registrar alumno</h2>
+      <!-- novalidate: la API valida y la página muestra el error en español. -->
+      <form id="student-form" novalidate>
+        <label>Nombre <input data-testid="name" id="name" maxlength="100"></label>
+        <label>Materia <input data-testid="subject" id="subject" maxlength="60">
+        </label>
+        <label>Grado
+          <input data-testid="grade" id="grade" type="number" min="1" max="12">
+        </label>
+        <label>Salón
+          <input data-testid="classroom" id="classroom" type="number" min="1"
+            max="999">
+        </label>
+        <button data-testid="save" id="save" type="submit">Guardar</button>
+        <p class="error" data-testid="form-error" id="form-error"></p>
+        <p class="request-id" data-testid="request-id" id="form-request-id"></p>
+      </form>
+    </section>
+    <section>
+      <h2>Alumnos</h2>
+      <label>Filtrar por salón
+        <input data-testid="classroom-filter" id="classroom-filter" type="number"
+          min="1" max="999">
+      </label>
+      <p class="error" data-testid="list-error" id="list-error"></p>
+      <table>
+        <thead>
+          <tr><th>Id</th><th>Nombre</th><th>Materia</th><th>Grado</th>
+            <th>Salón</th></tr>
+        </thead>
+        <tbody data-testid="students" id="students"></tbody>
+      </table>
+    </section>
+    <section>
+      <h2>Asistente</h2>
+      <div data-testid="answer" id="answer"></div>
+      <form id="ask-form">
+        <label>Pregunta <input data-testid="question" id="question"></label>
+        <button data-testid="send" id="send" type="submit">Enviar</button>
+        <p class="error" data-testid="ask-error" id="ask-error"></p>
+      </form>
+    </section>
+  </main>
+  <script>
+    // Historial de la conversación: vive solo en el navegador.
+    const history = [];
+    // Nombre de la entrada en sessionStorage; el valor lo escribe la persona.
+    const KEY_STORAGE = "classroom-assistant-api-key";
+    const NO_KEY_MESSAGE = "Escribe tu clave";
+
+    function byId(id) {
+      return document.getElementById(id);
+    }
+
+    function clear(node) {
+      while (node.firstChild) {
+        node.removeChild(node.firstChild);
+      }
+    }
+
+    function currentKey() {
+      return byId("api-key").value.trim();
+    }
+
+    // Encabezados de cada llamada a la API, con la clave en X-API-Key.
+    function authHeaders(extra) {
+      const headers = Object.assign({}, extra || {});
+      headers["X-API-Key"] = currentKey();
+      return headers;
+    }
+
+    // Mensaje para 401 y 429, o null si el estado es otro.
+    function accessMessage(response) {
+      if (response.status === 401) {
+        return "Clave inválida";
+      }
+      if (response.status === 429) {
+        const seconds = Number.parseInt(
+          response.headers.get("Retry-After") || "", 10);
+        const wait = Number.isFinite(seconds) && seconds > 0 ? seconds : 1;
+        return "Demasiadas peticiones; espera " + wait + " segundos";
+      }
+      return null;
+    }
+
+    function errorMessage(status) {
+      if (status === 422) {
+        return "Revisa los datos: hay campos vacíos, muy largos o fuera de rango.";
+      }
+      if (status === 404) {
+        return "No se encontró lo que buscabas.";
+      }
+      return "Ocurrió un error en el servidor. Intenta de nuevo.";
+    }
+
+    // Texto con el id de la petición, para pasarlo a soporte.
+    function requestIdText(requestId) {
+      return "request_id: " + (requestId || "desconocido");
+    }
+
+    function requestIdLine(requestId) {
+      const line = document.createElement("p");
+      line.className = "request-id";
+      line.setAttribute("data-testid", "request-id");
+      line.textContent = requestIdText(requestId);
+      return line;
+    }
+
+    async function loadStudents() {
+      const listError = byId("list-error");
+      listError.textContent = "";
+      const filter = byId("classroom-filter").value.trim();
+      const url = filter ? "/students?classroom=" + encodeURIComponent(filter)
+        : "/students";
+      const body = byId("students");
+      if (!currentKey()) {
+        // Sin clave no se llama a la API: evita un 401 al cargar la página.
+        clear(body);
+        listError.textContent = NO_KEY_MESSAGE;
+        return;
+      }
+      try {
+        const response = await fetch(url, { headers: authHeaders() });
+        if (!response.ok) {
+          clear(body);
+          listError.textContent = accessMessage(response)
+            || errorMessage(response.status);
+          return;
+        }
+        const students = await response.json();
+        clear(body);
+        for (const student of students) {
+          const row = document.createElement("tr");
+          const fields = ["id", "name", "subject", "grade", "classroom"];
+          for (const field of fields) {
+            const cell = document.createElement("td");
+            cell.textContent = String(student[field]);
+            row.appendChild(cell);
+          }
+          body.appendChild(row);
+        }
+      } catch (error) {
+        listError.textContent = "No se pudo conectar con el servidor.";
+      }
+    }
+
+    async function saveStudent(event) {
+      event.preventDefault();
+      const formError = byId("form-error");
+      const formRequestId = byId("form-request-id");
+      formError.textContent = "";
+      formRequestId.textContent = "";
+      const payload = {
+        name: byId("name").value,
+        subject: byId("subject").value,
+        grade: Number.parseInt(byId("grade").value, 10),
+        classroom: Number.parseInt(byId("classroom").value, 10),
+      };
+      if (!currentKey()) {
+        formError.textContent = NO_KEY_MESSAGE;
+        return;
+      }
+      try {
+        const response = await fetch("/students", {
+          method: "POST",
+          headers: authHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify(payload),
+        });
+        formRequestId.textContent = requestIdText(
+          response.headers.get("X-Request-ID"));
+        if (!response.ok) {
+          formError.textContent = accessMessage(response)
+            || errorMessage(response.status);
+          return;
+        }
+        byId("student-form").reset();
+        await loadStudents();
+      } catch (error) {
+        formError.textContent = "No se pudo conectar con el servidor.";
+      }
+    }
+
+    function addMessage(role, text, tools, requestId) {
+      const box = document.createElement("div");
+      box.className = "message " + role;
+      box.setAttribute("data-testid", "message");
+      const content = document.createElement("p");
+      content.textContent = text;
+      box.appendChild(content);
+      if (tools !== undefined) {
+        const toolLine = document.createElement("p");
+        toolLine.className = "tools";
+        toolLine.textContent = "Herramientas: "
+          + (tools.length ? tools.join(", ") : "ninguna");
+        box.appendChild(toolLine);
+      }
+      if (requestId !== undefined) {
+        box.appendChild(requestIdLine(requestId));
+      }
+      byId("answer").appendChild(box);
+    }
+
+    async function sendQuestion(event) {
+      event.preventDefault();
+      const askError = byId("ask-error");
+      askError.textContent = "";
+      const question = byId("question").value;
+      if (!currentKey()) {
+        askError.textContent = NO_KEY_MESSAGE;
+        return;
+      }
+      try {
+        const response = await fetch("/ask", {
+          method: "POST",
+          headers: authHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({ question: question, history: history }),
+        });
+        const denied = accessMessage(response);
+        if (denied) {
+          askError.textContent = denied;
+          return;
+        }
+        if (!response.ok) {
+          askError.textContent = (response.status === 422
+            ? "La pregunta está vacía o es demasiado larga."
+            : errorMessage(response.status))
+            + " (" + requestIdText(response.headers.get("X-Request-ID")) + ")";
+          return;
+        }
+        const result = await response.json();
+        addMessage("user", question);
+        addMessage("assistant", result.answer, result.tools_used,
+          result.request_id);
+        history.push({ role: "user", content: question });
+        history.push({ role: "assistant", content: result.answer });
+        byId("question").value = "";
+      } catch (error) {
+        askError.textContent = "No se pudo conectar con el servidor.";
+      }
+    }
+
+    // Guarda la clave al escribirla y recarga la lista con ella.
+    function keyChanged() {
+      const key = currentKey();
+      if (key) {
+        sessionStorage.setItem(KEY_STORAGE, key);
+      } else {
+        sessionStorage.removeItem(KEY_STORAGE);
+      }
+      loadStudents();
+    }
+
+    byId("api-key").value = sessionStorage.getItem(KEY_STORAGE) || "";
+    byId("api-key").addEventListener("input", keyChanged);
+    byId("student-form").addEventListener("submit", saveStudent);
+    byId("ask-form").addEventListener("submit", sendQuestion);
+    byId("classroom-filter").addEventListener("input", loadStudents);
+    loadStudents();
+  </script>
+</body>
+</html>
