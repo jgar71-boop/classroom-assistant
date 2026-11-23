@@ -50,19 +50,17 @@ def run_checks(client: httpx.Client, key: str) -> bool:
     :return: ``True`` si las cuatro pasan
     :rtype: bool
     """
+    # Cada comprobación: nombre, código esperado, método, ruta, cuerpo y encabezados.
+    # Cuerpo y encabezados en None equivalen a no mandarlos.
     checks = [
-        ("GET /health", 200, ("GET", "/health", {})),
-        ("POST /ask sin clave", 401, ("POST", "/ask", {"json": QUESTION})),
-        (
-            "POST /ask con clave",
-            200,
-            ("POST", "/ask", {"json": QUESTION, "headers": {KEY_HEADER: key}}),
-        ),
-        ("POST /students sin clave", 401, ("POST", "/students", {"json": STUDENT})),
+        ("GET /health", 200, "GET", "/health", None, None),
+        ("POST /ask sin clave", 401, "POST", "/ask", QUESTION, None),
+        ("POST /ask con clave", 200, "POST", "/ask", QUESTION, {KEY_HEADER: key}),
+        ("POST /students sin clave", 401, "POST", "/students", STUDENT, None),
     ]
     passed = True
-    for name, expected, (method, path, options) in checks:
-        status = status_of(client, method, path, **options)
+    for name, expected, method, path, body, headers in checks:
+        status = status_of(client, method, path, json=body, headers=headers)
         mark = "OK" if status == expected else "FAIL"
         passed = passed and status == expected
         received = "sin respuesta" if status is None else status
