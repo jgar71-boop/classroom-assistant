@@ -61,7 +61,9 @@ uv run python -m verification docker
 
 El producto se publica en Render como contenedor (`Dockerfile` y `render.yaml`), y Render solo
 despliega si pasa el pipeline de CI (`.github/workflows/ci.yml`). En Render se escriben los
-secretos `API_KEYS`, `CF_ACCOUNT_ID` y `CF_API_TOKEN`; nunca van en el repositorio.
+secretos `API_KEYS`, `CF_ACCOUNT_ID` y `CF_API_TOKEN`; nunca van en el repositorio. Si el AI
+Gateway tiene «Authenticated Gateway» (si no, responde `401` con código `2009`), también se
+escribe en Render el secreto `CF_AIG_TOKEN`: un token con permiso AI Gateway: Run.
 `LANGSMITH_API_KEY` es opcional y se agrega en Render > Environment solo si se encienden las
 trazas.
 
@@ -137,6 +139,7 @@ del cliente autenticado; `null` en las rutas libres):
 | `CF_ACCOUNT_ID` | sin valor | Cuenta de Cloudflare; obligatoria con `gateway` |
 | `CF_GATEWAY_ID` | `default` | Id del AI Gateway |
 | `CF_API_TOKEN` | sin valor | Token secreto de Cloudflare; obligatorio con `gateway` |
+| `CF_AIG_TOKEN` | sin valor | Token secreto para un AI Gateway con «Authenticated Gateway» (permiso AI Gateway: Run); se manda en `cf-aig-authorization` |
 | `MODEL_SMALL` | `@cf/meta/llama-3.1-8b-instruct-fast` | Modelo barato |
 | `MODEL_LARGE` | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | Modelo capaz |
 | `ROUTING` | `true` | Enrutamiento por pregunta (`true` o `false`) |
@@ -153,5 +156,5 @@ del cliente autenticado; `null` en las rutas libres):
 
 Un modelo de `MODEL_SMALL` o `MODEL_LARGE` sin precio en `PRICES_PATH` impide arrancar. La clave de
 LangSmith se lee solo del entorno: nunca se guarda en la configuración, en el código ni en el log.
-El token de Cloudflare y las claves de `API_KEYS` no aparecen en `repr` de la configuración, en
+Los tokens de Cloudflare y las claves de `API_KEYS` no aparecen en `repr` de la configuración, en
 el log ni en los mensajes de error.

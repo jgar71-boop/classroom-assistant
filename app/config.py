@@ -48,7 +48,7 @@ REQUIRED_GATEWAY_VARIABLES = ("CF_ACCOUNT_ID", "CF_API_TOKEN")
 class CostSettings:  # pylint: disable=too-many-instance-attributes
     """Configuración del modelo real y de las palancas de costo (fase 3).
 
-    El token de Cloudflare no aparece en ``repr``.
+    Los tokens de Cloudflare no aparecen en ``repr``.
 
     :param cf_account_id: Cuenta de Cloudflare
     :type cf_account_id: str
@@ -56,6 +56,9 @@ class CostSettings:  # pylint: disable=too-many-instance-attributes
     :type cf_gateway_id: str
     :param cf_api_token: Token secreto de Cloudflare
     :type cf_api_token: str
+    :param cf_aig_token: Token secreto del AI Gateway autenticado (opcional; vacío
+        si el gateway no exige ``cf-aig-authorization``)
+    :type cf_aig_token: str
     :param model_small: Modelo barato
     :type model_small: str
     :param model_large: Modelo capaz
@@ -83,6 +86,7 @@ class CostSettings:  # pylint: disable=too-many-instance-attributes
     cf_account_id: str = field(default="", repr=False)
     cf_gateway_id: str = DEFAULTS["CF_GATEWAY_ID"]
     cf_api_token: str = field(default="", repr=False)
+    cf_aig_token: str = field(default="", repr=False)
     model_small: str = DEFAULTS["MODEL_SMALL"]
     model_large: str = DEFAULTS["MODEL_LARGE"]
     routing: bool = True
@@ -343,6 +347,7 @@ def _costs(env, provider):
         cf_account_id=_text(env, "CF_ACCOUNT_ID"),
         cf_gateway_id=gateway_id,
         cf_api_token=_text(env, "CF_API_TOKEN"),
+        cf_aig_token=_text(env, "CF_AIG_TOKEN"),
         model_small=model_small,
         model_large=model_large,
         routing=_boolean(env, "ROUTING"),

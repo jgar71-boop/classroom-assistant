@@ -31,3 +31,6 @@ services:
         sync: false
       - key: CF_API_TOKEN
         sync: false
+      # Opcional: token del AI Gateway, se envía como cf-aig-authorization
+      - key: CF_AIG_TOKEN
+        sync: false

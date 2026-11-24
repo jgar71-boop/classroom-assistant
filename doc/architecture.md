@@ -13,8 +13,9 @@ repositorio. Cada fase le agrega algo:
 flowchart LR
     Browser["Página web<br/>static/index.html<br/>clave en sessionStorage"]
     subgraph API["main.py · create_app()"]
-        MW["Middleware de observabilidad<br/>X-Request-ID, latencia,<br/>error 500"]
-        Sec["Middleware de seguridad<br/>401 sin clave · 429 con Retry-After<br/>libres: /, /health, /docs"]
+        subgraph MW["Middleware observe_request (el único)<br/>X-Request-ID, latencia, error 500"]
+            Guard["guard(request)<br/>401 sin clave · 429 con Retry-After<br/>libres: /, /health, /docs"]
+        end
         Routes["Rutas<br/>/students, /ask, /metrics<br/>502 si el modelo falla"]
     end
     Config["config.py<br/>Settings + CostSettings<br/>+ SecuritySettings"]
@@ -32,19 +33,18 @@ flowchart LR
         AgentL["Agent MODEL_LARGE"]
     end
     LLM["llm.py<br/>LanguageModel.complete()<br/>FakeModel"]
-    Gateway["gateway.py<br/>GatewayModel"]
+    Gateway["gateway.py<br/>GatewayModel<br/>Authorization + cf-aig-authorization<br/>(si hay CF_AIG_TOKEN)"]
     CF[("Cloudflare AI Gateway<br/>Workers AI")]
     Repo["repository.py<br/>StudentRepository<br/>Lock + escritura atómica"]
     File[("STUDENTS_PATH<br/>students.json<br/>efímero en Render free")]
     Stdout[["stdout"]]
     LangSmith[("LangSmith<br/>solo con clave")]
 
-    Browser -- "HTTP JSON + X-API-Key" --> MW
-    MW --> Sec
-    Sec -- "identify, check" --> Security
-    Sec -- "client" --> Ctx
-    Sec --> Routes
-    MW --> Ctx
+    Browser -- "HTTP JSON + X-API-Key" --> Guard
+    Guard -- "identify, check" --> Security
+    Guard -- "client" --> Ctx
+    Guard -- "None: call_next" --> Routes
+    MW -- "request_id" --> Ctx
     MW -- "request, error" --> Events
     MW -- "latencia, status" --> Metrics
     Clock --> MW
@@ -90,14 +90,16 @@ flowchart LR
 ## Piezas
 
 - `config.py`: lee y valida las variables de las cuatro fases y llama al compliance. No guarda
-  `LANGSMITH_API_KEY`, y no muestra `CF_API_TOKEN` ni `API_KEYS` en `repr`.
+  `LANGSMITH_API_KEY`, y no muestra `CF_API_TOKEN`, `CF_AIG_TOKEN` ni `API_KEYS` en `repr`.
 - `compliance.py`: con `ENVIRONMENT=production` no deja arrancar con el modelo simulado, sin claves o con claves
   cortas, ni con trazas que no ocultan entradas y salidas.
 - `security.py`: interpreta `API_KEYS`, identifica al cliente con `hmac.compare_digest` y lleva el límite por
   cliente con ventana deslizante.
 - `pricing.py`: precios por millón de tokens y el costo de una llamada.
 - `router.py`: elige `MODEL_SMALL` o `MODEL_LARGE` y dice el motivo.
-- `gateway.py`: llama a AI Gateway. Toda falla se vuelve `ModelUnavailable`.
+- `gateway.py`: llama a AI Gateway con `Authorization: Bearer CF_API_TOKEN`. Si la variable opcional
+  `CF_AIG_TOKEN` tiene valor, agrega `cf-aig-authorization` para gateways con «Authenticated Gateway»; si está
+  vacía, no lo manda. Toda falla se vuelve `ModelUnavailable`.
 - `clock.py`: hora UTC y reloj monotónico inyectables. Lo usan la latencia, el log y el límite.
 - `request_context.py`: el `request_id` y el cliente autenticado, cada uno en su `ContextVar`.
 - `events.py`: eventos con campos fijos y `client`. No llevan datos personales ni claves.
@@ -106,8 +108,11 @@ flowchart LR
 - `repository.py`: el único acceso al archivo. Da ids `STU-NNNN` consecutivos bajo candado.
 - `llm.py`: la interfaz de modelo, el modelo simulado determinista y `build_model`.
 - `agent.py`: protocolo JSON, tope de vueltas, ventana de historial y costo por llamada.
-- `main.py`: los dos middlewares (observabilidad por fuera, seguridad por dentro), Pydantic estricto, las rutas
-  y un agente por modelo.
+- `main.py`: un solo middleware HTTP, `observe_request` (id, latencia, error 500, log y métrica), que dentro
+  llama a la función `guard` de `_build_security_guard` para revisar la clave y el límite antes de `call_next`.
+  No es un middleware de seguridad aparte porque Starlette corre cada middleware interno en otra tarea y el
+  `client` que fijara no llegaría al evento `request`; así un `401` o `429` también lleva `request_id`, log,
+  métrica y `client`. Además: Pydantic estricto, las rutas y un agente por modelo.
 - `static/index.html`: tiene el campo de clave (contraseña, en `sessionStorage`), el alta, la lista y el chat.
   Muestra «Clave inválida» y «Demasiadas peticiones». Escribe solo con `textContent`.
 - `Dockerfile`, `.github/workflows/ci.yml`, `render.yaml` y `scripts/smoke.py`: empaquetan, prueban, publican y
@@ -116,7 +121,8 @@ flowchart LR
 ## Decisiones
 
 - [0001 API sin estado con repositorio de archivo JSON atómico](adr/0001-stateless-api.md)
-- [0002 Un solo agente de solo lectura con bucle con tope](adr/0002-read-only-agent-bounded-loop.md)
+- [0002 Un solo agente de solo lectura con bucle con tope](adr/0002-read-only-agent-bounded-loop.md),
+  modificado por el 0008: una instancia por modelo
 - [0003 Interfaz de modelo, modelo simulado e inyección](adr/0003-model-interface-and-injection.md)
 - [0004 Id por petición y eventos JSON con campos fijos](adr/0004-request-id-and-json-events.md)
 - [0005 Métricas en memoria del proceso, excepción acotada al ADR 0001](adr/0005-in-process-metrics.md)

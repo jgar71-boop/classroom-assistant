@@ -14,6 +14,7 @@ GATEWAY_URL_TEMPLATE = (
     "https://gateway.ai.cloudflare.com/v1/{account_id}/{gateway_id}"
     "/workers-ai/v1/chat/completions"
 )
+AIG_AUTH_HEADER = "cf-aig-authorization"
 CACHE_TTL_HEADER = "cf-aig-cache-ttl"
 CACHE_STATUS_HEADER = "cf-aig-cache-status"
 CACHE_HIT = "hit"
@@ -102,10 +103,15 @@ class GatewayModel:
     def _headers(self):
         """Arma los encabezados de la llamada.
 
-        :return: Encabezados con el token y, si aplica, el TTL de caché
+        Con ``cf_aig_token`` se agrega ``cf-aig-authorization`` para un AI
+        Gateway autenticado; sin él, el encabezado no se manda.
+
+        :return: Encabezados con los tokens y, si aplica, el TTL de caché
         :rtype: dict
         """
         headers = {"Authorization": f"Bearer {self._costs.cf_api_token}"}
+        if self._costs.cf_aig_token:
+            headers[AIG_AUTH_HEADER] = f"Bearer {self._costs.cf_aig_token}"
         if self._costs.cache_ttl_seconds > 0:
             headers[CACHE_TTL_HEADER] = str(self._costs.cache_ttl_seconds)
         return headers
